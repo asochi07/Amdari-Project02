@@ -1,0 +1,28 @@
+# =============================================================
+# SecureFlow .gitignore
+# =============================================================
+
+# Environment variables — NEVER commit these
+# Note: .env already committed intentionally to simulate
+# real-world secret exposure for Gitleaks detection later on
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Local artifacts — keep locally only
+screenshots/
+reports/
