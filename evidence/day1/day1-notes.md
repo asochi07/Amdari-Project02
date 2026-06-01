@@ -100,9 +100,99 @@ How the SECRET_KEY protects it: The signature is created using the SECRET_KEY. W
 
 What happens when it leaks: If an attacker knows the SECRET_KEY, they can create their own token saying they are admin or any other user, sign it with the stolen key, and the server will accept it as completely genuine. This is exactly vulnerability AV-03 and AV-07 in SecureFlow — the key REDACTED-ROTATED-SECRET is hardcoded in the repository.
 
-## Scope — What I Fix vs What I Route
-### I Fix (DevSecOps owned):
-- Committed secrets, container CVEs, Kubernetes misconfigs, IaC misconfigs
+## Scope — What I Remediate vs What I Route
 
-### I Route to AppSec:
-- SQL injection, IDOR, XSS, CSRF, insecure password storage
+As a DevSecOps engineer on this engagement, my responsibilities are divided
+into two clear categories. I fix what I own. I detect, document, and route
+what belongs to the Application Security (AppSec) team.
+
+### What I Will REMEDIATE (DevSecOps Owned)
+
+These are findings in the secrets, container, Kubernetes, and infrastructure
+layers. I am responsible for detecting AND fixing these.
+
+| Vulnerability ID| Description                          | Tool That Detects It| MyAction                  |
+|-----------------|--------------------------------------|---------------------|---------------------------|
+| IV-03           |Secrets in environment variables      | Gitleaks            |Remove, rotate, migrate to
+                                                                               | Vault                     |
+| IV-04           | Secrets committed in .env file       | Gitleaks            | Remove from code, rewrite
+                                                                               | Git history               |
+| IV-01           | Hardcoded DB passwords               | Gitleaks            | Migrate to 
+                                                                               | Vault                     |
+| AV-07           | Hardcoded JWT secret                 | Gitleaks            | Rotate and migrate to
+                                                                               | Vault                     |
+| FV-03           | Hardcoded session secret             | Gitleaks            | Rotate and migrate to 
+                                                                               | Vault                     |
+| CK-01           | python:3.9-slim has 47 critical CVEs | Trivy               | Upgrade base image to
+                                                                               | python:3.12-slim          |
+| CK-02           | Containers running as root           | Trivy / Checkov     | Add USER directive to all
+                                                                               | Dockerfiles               |
+| CK-03           | Unpinned image tags (:latest)        | Trivy               | Pin all images to specific
+                                                                               | SHA digests               |
+| CK-04           | Privileged containers in K8s manifests| Trivy K8s   | Set privileged: false on all 
+                                                                        |deployments 
+| CK-05           | No resource limits in K8s             | Trivy K8s    | Add CPU and memory limits to all|
+                                                                         | containers                      |
+| CK-06           | :latest image tag in K8s manifests    |OPA Gatekeeper| Replace with digest-pinned
+                                                                         | references                      |
+| CK-07           | Missing required labels               |OPA Gatekeeper| Add app and team labels to all
+                                                                         | resources                       |
+| CK-08           | No NetworkPolicy — default allow all  | Trivy K8s    | Implement default-deny
+                                                                         | NetworkPolicy                   |
+| CK-09           | Secrets stored in Kubernetes ConfigMaps| Trivy K8s   | Migrate to HashiCorp Vault      |
+| IV-02           | Databases exposed on host network      | Checkov     | Remove host port bindings       |
+| IV-05           | Containers running as root             | Checkov     | Add USER directive to
+                                                                         | Dockerfiles                     |
+| IV-06           | No resource limits in docker-compose   | Checkov     | Add deploy.resources.limits     |
+| IV-07           | No network segmentation                | Checkov     | Define isolated Docker networks |
+| IV-08           | IAM roles with AdministratorAccess     | Checkov     | Scope to least-privilege
+                                                                         | policies                        |
+| IV-09           | Unencrypted S3 buckets                 | Checkov     | Enable AES-256 server-si
+                                                                         | encryption                      |
+| IV-10           | EKS nodes in public subnets            | Checkov     | Move to private subnets with NAT
+                                                                         | Gateway                         |
+
+### What I Will ROUTE to AppSec (Application Security Team Owned)
+
+These are findings in the application code layer. I am responsible for
+DETECTING and REPORTING these, but NOT fixing them. The AppSec team owns
+the remediation.
+
+| Vulnerability ID| Description                    | Tool That Detects It | My Action                   |
+|-------|------------------------------------------|----------------------|-----------------------------|
+| AV-01 | SQL injection in /login endpoint         | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| AV-02 | SQL injection in /register endpoint      | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| AV-03 | Broken authentication — JWT manipulation | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| AV-04 | No rate limiting on /login               | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| AV-05 | Passwords stored with MD5 no salt        | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| AV-06 | Admin panel — no authorisation check     | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| AV-08 | Sensitive data in error responses        | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| TV-01 | IDOR — account balance endpoint          | SonarQube / ZAP | Report in PR comment, tag AppSec team |
+| TV-02 | IDOR — transaction history endpoint      | SonarQube / ZAP | Report in PR comment, tag AppSec team |
+| TV-03 | Negative transfer amount accepted        | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| TV-04 | Mass assignment on virtual card          | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| TV-05 | Balance overflow — no maximum check      | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| TV-06 | Missing CSRF protection                  | OWASP ZAP (DAST) | Report in PR comment, tag AppSec team |
+| TV-07 | Expired JWT tokens accepted              | SonarQube (SAST) | Report in PR comment, tag AppSec team |
+| FV-01 | Reflected XSS in frontend                | OWASP ZAP (DAST) | Report in PR comment, tag AppSec team |
+| FV-02 | Stored XSS in transaction notes          | OWASP ZAP (DAST) | Report in PR comment, tag AppSec team |
+| FV-05 | CSRF on transfer form                    | OWASP ZAP (DAST) | Report in PR comment, tag AppSec team |
+| FV-06 | Clickjacking — no X-Frame-Options        | OWASP ZAP (DAST) | Report in PR comment, tag AppSec team |
+| FV-07 | Missing security headers                 | OWASP ZAP (DAST) | Report in PR comment, tag AppSec team |
+
+### Why This Division Exists
+
+A DevSecOps engineer is not an application developer. In a real organisation,
+fixing SQL injection requires understanding the application business logic,
+rewriting Flask routes, and testing that the fix does not break functionality.
+That work belongs to the team that owns the code.
+
+My role is to ensure that:
+1. Every finding is automatically detected on every pull request
+2. Every finding is correctly attributed to the right owner
+3. DevSecOps-owned findings block the merge (hard-fail)
+4. AppSec-owned findings are surfaced and routed without blocking delivery (soft-fail)
+5. No finding is ever silently ignored
+
+The pipeline I build this week enforces these ownership boundaries
+automatically on every code change.
