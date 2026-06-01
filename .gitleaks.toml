@@ -1,12 +1,17 @@
 # =============================================================================
-# SecureFlow Gitleaks Custom Rules
+# SecureFlow Gitleaks Configuration
 # VaultBridge Financial Technologies
 # =============================================================================
-# These rules extend the default Gitleaks ruleset with patterns specific
-# to the SecureFlow application stack.
+# IMPORTANT: useDefault = true means built-in rules run ALONGSIDE custom rules
+# Without this, only the custom rules below would run
 # =============================================================================
 
 title = "SecureFlow Gitleaks Configuration"
+
+# This enables ALL default Gitleaks rules in addition to the custom ones below
+# Default rules catch: AWS keys, GitHub tokens, private keys, generic secrets
+[extend]
+useDefault = true
 
 # Custom rule — Flask SECRET_KEY
 [[rules]]
