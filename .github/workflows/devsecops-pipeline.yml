@@ -31,19 +31,19 @@ jobs:
           fetch-depth: 0
 
       - name: Run Gitleaks — Full History Scan
-        id: gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: --log-opts="--all" --report-format=sarif --report-path=gitleaks-report.sarif --verbose
+          GITLEAKS_LOG_OPTS: "--all"
+          GITLEAKS_REPORT: "gitleaks-report.json"
+          GITLEAKS_FORMAT: "json"
 
-      - name: Upload Gitleaks SARIF Report
+      - name: Upload Gitleaks Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gitleaks-report
-          path: gitleaks-report.sarif
+          path: gitleaks-report.json
 
 # =============================================================================
 # STAGE 2 — SAST Scanning (SonarQube)
