@@ -1,0 +1,45 @@
+# =============================================================================
+# SecureFlow Gitleaks Custom Rules
+# VaultBridge Financial Technologies
+# =============================================================================
+# These rules extend the default Gitleaks ruleset with patterns specific
+# to the SecureFlow application stack.
+# =============================================================================
+
+title = "SecureFlow Gitleaks Configuration"
+
+# Custom rule — Flask SECRET_KEY
+[[rules]]
+id = "flask-secret-key"
+description = "Flask SECRET_KEY or SESSION_SECRET committed in plaintext"
+regex = '''(?i)(SECRET_KEY|SESSION_SECRET)\s*[=:]\s*['\"]?([a-zA-Z0-9_\-!@#$%^&*]{6,})['\"]?'''
+tags = ["flask", "secret", "session"]
+
+# Custom rule — JWT secret
+[[rules]]
+id = "jwt-secret"
+description = "JWT secret or signing key committed in plaintext"
+regex = '''(?i)(JWT_SECRET|JWT_KEY|jwt_secret)\s*[=:]\s*['\"]?([a-zA-Z0-9_\-]{6,})['\"]?'''
+tags = ["jwt", "secret", "authentication"]
+
+# Custom rule — Database connection strings
+[[rules]]
+id = "db-password-env"
+description = "Database password committed in environment variable"
+regex = '''(?i)(DB_PASSWORD|POSTGRES_PASSWORD|DATABASE_PASSWORD)\s*[=:]\s*['\"]?([a-zA-Z0-9_\-!@#]{4,})['\"]?'''
+tags = ["database", "password", "credentials"]
+
+# Custom rule — SonarQube token
+[[rules]]
+id = "sonarqube-token"
+description = "SonarQube authentication token"
+regex = '''(?i)(SONAR_TOKEN|sonar\.login)\s*[=:]\s*['\"]?(sqp_[a-zA-Z0-9]{32,})['\"]?'''
+tags = ["sonarqube", "token", "ci"]
+
+# Allowlist — ignore test and example files
+[allowlist]
+description = "Global allowlist"
+paths = [
+  '''.gitleaks.toml''',
+  '''README.md'''
+]
