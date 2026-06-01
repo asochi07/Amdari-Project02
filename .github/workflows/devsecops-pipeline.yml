@@ -137,16 +137,71 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0        # Required for SonarQube blame data
 
-      - name: Hello World — Stage 2 placeholder
+      - name: Run SonarQube SAST Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Check SonarQube Quality Gate
+        id: sonarqube-check
         run: |
-          echo "============================================"
-          echo "Stage 2: SAST Scanning — PLACEHOLDER"
-          echo "Tool: SonarQube"
-          echo "Gate: Hard-fail on CRITICAL/BLOCKER"
-          echo "      Soft-fail on MAJOR/MINOR — route to AppSec"
-          echo "Implementation: Day 3"
-          echo "============================================"
+          echo "Fetching SonarQube analysis results..."
+
+          # Wait for analysis to complete
+          sleep 10
+
+          # Fetch quality gate status from SonarCloud API
+          SONAR_STATUS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=Azochi07_Amdari-Project02" \
+            | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['projectStatus']['status'])")
+
+          echo "SonarQube Quality Gate Status: $SONAR_STATUS"
+          echo "sonar_status=$SONAR_STATUS" >> $GITHUB_OUTPUT
+
+          # Hard-fail only on ERROR (CRITICAL/BLOCKER findings)
+          # WARN = MAJOR/MINOR findings — soft-fail, continue pipeline
+          if [ "$SONAR_STATUS" = "ERROR" ]; then
+            echo "CRITICAL or BLOCKER findings detected — hard-failing pipeline"
+            exit 1
+          else
+            echo "No CRITICAL/BLOCKER findings — pipeline continues"
+            echo "AppSec-owned findings will be surfaced in security gate PR comment"
+          fi
+
+      - name: Export SonarQube Findings to JSON
+        if: always()
+        run: |
+          echo "Exporting SonarQube findings for security gate consumption..."
+
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=Azochi07_Amdari-Project02&resolved=false" \
+            -o sonarqube-findings.json
+
+          echo "Findings exported to sonarqube-findings.json"
+          python3 -c "
+          import json
+          with open('sonarqube-findings.json') as f:
+              data = json.load(f)
+          total = data.get('total', 0)
+          issues = data.get('issues', [])
+          severities = {}
+          for issue in issues:
+              sev = issue.get('severity', 'UNKNOWN')
+              severities[sev] = severities.get(sev, 0) + 1
+          print(f'Total findings: {total}')
+          print(f'By severity: {severities}')
+          "
+
+      - name: Upload SonarQube Findings Artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonarqube-findings
+          path: sonarqube-findings.json
 
 # =============================================================================
 # STAGE 3 — Container Image Scanning (Trivy)
