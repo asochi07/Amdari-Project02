@@ -26,18 +26,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0        # Required for full history scan
 
-      - name: Hello World — Stage 1 placeholder
-        run: |
-          echo "============================================"
-          echo "Stage 1: Secrets Detection — PLACEHOLDER"
-          echo "Tool: Gitleaks"
-          echo "Gate: Hard-fail on any finding"
-          echo "Implementation: Day 3"
-          echo "============================================"
+      - name: Run Gitleaks — Full History Scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        with:
+          args: --log-opts="--all" --report-format=json --report-path=gitleaks-report.json
+
+      - name: Upload Gitleaks Report
+        if: always()            # Upload even when the scan fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
 
 # =============================================================================
 # STAGE 2 — SAST Scanning (SonarQube)
@@ -49,7 +55,7 @@ jobs:
     needs: secret-scan         # Only runs if Stage 1 passes
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Hello World — Stage 2 placeholder
         run: |
@@ -71,7 +77,7 @@ jobs:
     needs: sast-scan
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Hello World — Stage 3 placeholder
         run: |
@@ -92,7 +98,7 @@ jobs:
     needs: image-scan
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Hello World — Stage 4 placeholder
         run: |
