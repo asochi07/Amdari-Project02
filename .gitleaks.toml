@@ -46,5 +46,7 @@ tags = ["sonarqube", "token", "ci"]
 description = "Global allowlist"
 paths = [
   '''.gitleaks.toml''',
-  '''README.md'''
+  '''README.md''',
+  '''evidence/''',
+  '''reports/'''
 ]
