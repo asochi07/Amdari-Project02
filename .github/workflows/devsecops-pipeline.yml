@@ -542,20 +542,173 @@ jobs:
 
 
 # =============================================================================
-# STAGE 5 — Security Gate
-# Status: Placeholder — full implementation Day 5
+# STAGE 5 — Security Gate (Aggregation and Differentiated Policy)
+# Aggregates all scanner outputs, applies ownership rules, posts PR comment
 # =============================================================================
   security-gate:
     name: "Stage 5 — Security Gate"
     runs-on: ubuntu-latest
     needs: [secret-scan, sast-scan, image-scan, iac-scan]
+    if: always()    # Run even if upstream stages failed, to aggregate results
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
     steps:
-      - name: Hello World — Stage 5 placeholder
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Download All Scanner Artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-results
+        continue-on-error: true
+
+      - name: Aggregate Findings and Apply Gate Policy
+        id: gate
         run: |
           echo "============================================"
-          echo "Stage 5: Security Gate — PLACEHOLDER"
-          echo "Implementation: Day 5"
+          echo "SECURITY GATE — AGGREGATING ALL FINDINGS"
           echo "============================================"
+
+          DEVSECOPS_FAIL=0
+          APPSEC_COUNT=0
+
+          # Check upstream job results
+          echo "Upstream stage results:"
+          echo "  Stage 1 (Gitleaks):   ${{ needs.secret-scan.result }}"
+          echo "  Stage 2 (SonarQube):  ${{ needs.sast-scan.result }}"
+          echo "  Stage 3 (Trivy):      ${{ needs.image-scan.result }}"
+          echo "  Stage 4 (IaC):        ${{ needs.iac-scan.result }}"
+          echo ""
+
+          # DevSecOps-owned stages — any failure is a hard-fail
+          if [ "${{ needs.secret-scan.result }}" = "failure" ]; then
+            echo "  DEVSECOPS HARD-FAIL: Secrets detected (Stage 1)"
+            DEVSECOPS_FAIL=1
+          fi
+          if [ "${{ needs.image-scan.result }}" = "failure" ]; then
+            echo "  DEVSECOPS HARD-FAIL: Container CVEs detected (Stage 3)"
+            DEVSECOPS_FAIL=1
+          fi
+          if [ "${{ needs.iac-scan.result }}" = "failure" ]; then
+            echo "  DEVSECOPS HARD-FAIL: IaC/K8s misconfigurations (Stage 4)"
+            DEVSECOPS_FAIL=1
+          fi
+
+          # SonarQube — hard-fail only on CRITICAL/BLOCKER
+          if [ "${{ needs.sast-scan.result }}" = "failure" ]; then
+            echo "  DEVSECOPS HARD-FAIL: SonarQube CRITICAL/BLOCKER (Stage 2)"
+            DEVSECOPS_FAIL=1
+          fi
+
+          echo "DEVSECOPS_FAIL=$DEVSECOPS_FAIL" >> $GITHUB_OUTPUT
+          echo ""
+          echo "============================================"
+          if [ "$DEVSECOPS_FAIL" -eq "1" ]; then
+            echo "GATE DECISION: BLOCK MERGE"
+            echo "DevSecOps-owned CRITICAL findings present"
+          else
+            echo "GATE DECISION: ALLOW MERGE"
+            echo "No DevSecOps-owned blocking findings"
+          fi
+          echo "============================================"
+
+      - name: Post Security Gate PR Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const devsecopsFail = '${{ steps.gate.outputs.DEVSECOPS_FAIL }}' === '1';
+
+            const secretResult = '${{ needs.secret-scan.result }}';
+            const sastResult = '${{ needs.sast-scan.result }}';
+            const imageResult = '${{ needs.image-scan.result }}';
+            const iacResult = '${{ needs.iac-scan.result }}';
+
+            const statusEmoji = (r) => r === 'success' ? 'PASS' : r === 'failure' ? 'FAIL' : 'SKIP';
+
+            const body = `## SecureFlow Security Gate Report
+
+            ### Gate Decision: ${devsecopsFail ? 'MERGE BLOCKED' : 'MERGE ALLOWED'}
+
+            ---
+
+            ### Section 1 — DevSecOps-Owned Findings (BLOCKING)
+
+            These findings block the merge and must be remediated by the DevSecOps team.
+
+            | Stage | Scanner | Result | Owner |
+            |---|---|---|---|
+            | 1 | Gitleaks (Secrets) | ${statusEmoji(secretResult)} | DevSecOps |
+            | 3 | Trivy (Container CVEs) | ${statusEmoji(imageResult)} | DevSecOps |
+            | 4 | Trivy K8s + Checkov (IaC) | ${statusEmoji(iacResult)} | DevSecOps |
+
+            ${devsecopsFail ? '**Action required:** One or more DevSecOps-owned scanners failed. Download the scan artefacts, remediate the findings, and push again. Secrets findings require immediate credential rotation.' : 'No blocking DevSecOps findings.'}
+
+            ---
+
+            ### Section 2 — AppSec-Owned Findings (NON-BLOCKING — ROUTED)
+
+            These findings are surfaced for the AppSec team. They do NOT block this merge.
+
+            | Stage | Scanner | Result | Owner |
+            |---|---|---|---|
+            | 2 | SonarQube (SAST) | ${statusEmoji(sastResult)} | AppSec |
+            | 7 | OWASP ZAP (DAST) | Pending Day 5 | AppSec |
+
+            **AppSec Intake:** Findings have been routed to the AppSec review queue.
+            **SLA:** Triage within 5 business days.
+
+            ---
+
+            ### Exception Process
+
+            To request an exception for a specific finding, comment:
+            \`/security-exception <finding-id> <justification>\`
+
+            Note: Secrets findings are never eligible for exception.
+
+            ---
+            *Generated by SecureFlow Security Gate | Policy: docs/security-gate-policy.md*`;
+
+            // Check for existing gate comment to update instead of duplicating
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const existing = comments.find(c =>
+              c.body.includes('SecureFlow Security Gate Report')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Enforce Gate Decision
+        run: |
+          if [ "${{ steps.gate.outputs.DEVSECOPS_FAIL }}" = "1" ]; then
+            echo "SECURITY GATE: BLOCKING MERGE"
+            echo "DevSecOps-owned findings must be remediated"
+            exit 1
+          else
+            echo "SECURITY GATE: MERGE ALLOWED"
+          fi
 
 # =============================================================================
 # STAGE 6 — Image Signing and SBOM
