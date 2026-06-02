@@ -1,0 +1,71 @@
+name: Security Exception Handler
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  handle-exception:
+    name: "Handle Security Exception Request"
+    runs-on: ubuntu-latest
+    # Only run on PR comments starting with /security-exception
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/security-exception')
+
+    steps:
+      - name: Parse and Log Exception Request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment.body;
+            const commenter = context.payload.comment.user.login;
+
+            // Parse: /security-exception <finding-id> <justification>
+            const match = comment.match(/^\/security-exception\s+(\S+)\s+(.+)/s);
+
+            if (!match) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `Invalid exception format. Use:\n\`/security-exception <finding-id> <justification>\``
+              });
+              return;
+            }
+
+            const findingId = match[1];
+            const justification = match[2];
+
+            // Secrets findings are never eligible
+            const isSecretFinding = /gitleaks|secret|jwt|password|token|aws-access/i.test(findingId);
+
+            if (isSecretFinding) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## Exception DENIED\n\nFinding \`${findingId}\` appears to be a secrets finding. Secrets findings are NEVER eligible for exception per the Security Gate Policy. Credential rotation is mandatory.\n\nRequested by: @${commenter}`
+              });
+              return;
+            }
+
+            // Log the exception request
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## Security Exception Logged\n\n**Finding:** \`${findingId}\`\n**Justification:** ${justification}\n**Requested by:** @${commenter}\n**Status:** PENDING DEVSECOPS LEAD APPROVAL\n**Expiry:** 30 days from approval\n\nThis exception requires DevSecOps lead approval before the finding is waived. The request has been logged for audit.`
+            });
+
+            // Add a label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['security-exception-requested']
+            });
