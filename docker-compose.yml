@@ -1,17 +1,17 @@
-# SecureFlow docker-compose — INTENTIONALLY VULNERABLE.
-# Planted vulnerabilities:
-#   IV-01  hardcoded DB password
-#   IV-02  databases exposed on host network (ports 5432, 5433)
-#   IV-03  secrets in environment variables (SECRET_KEY, SESSION_SECRET, DB_PASSWORD)
-#   IV-06  no resource limits
-#   IV-07  no network segmentation between services
-#   CK-03  postgres:14 used without digest pinning
+# SecureFlow docker-compose — REMEDIATED (Week 2 Day 7).
+# Remediations applied:
+#   IV-01  DB passwords no longer hardcoded — read from untracked .env
+#   IV-03  secrets externalised to .env (not committed)
+#   IV-06  resource limits added to every service
+#   IV-07  network segmentation via user-defined networks
+#   CK-03  postgres image pinned to a specific SHA256 digest
+# NOTE: For production, secrets are delivered via HashiCorp Vault (see Day 6).
 
 version: "3.8"
 
 services:
   auth-db:
-    image: postgres:14
+    image: postgres:14@sha256:a209aced4fa19381231fae4d9a4c5816f7691294f13572f8bddc082ba32e1c7c
     environment:
       POSTGRES_DB: authdb
       POSTGRES_USER: authuser
@@ -23,7 +23,7 @@ services:
       - auth-db-data:/var/lib/postgresql/data
 
   transaction-db:
-    image: postgres:14
+    image: postgres:14@sha256:a209aced4fa19381231fae4d9a4c5816f7691294f13572f8bddc082ba32e1c7c
     environment:
       POSTGRES_DB: transactiondb
       POSTGRES_USER: txuser

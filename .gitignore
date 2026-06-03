@@ -3,8 +3,7 @@
 # =============================================================
 
 # Environment variables — NEVER commit these
-# Note: .env already committed intentionally to simulate
-# real-world secret exposure for Gitleaks detection later on
+.env
 .env.local
 .env.*.local
 

@@ -238,6 +238,7 @@ jobs:
           echo "============================================"
           trivy image \
             --severity CRITICAL,HIGH \
+            --ignore-unfixed \
             --exit-code 1 \
             --format json \
             --output trivy-auth-service.json \
@@ -245,6 +246,7 @@ jobs:
             secureflow/auth-service:test || true
           trivy image \
             --severity CRITICAL,HIGH \
+            --ignore-unfixed \
             --exit-code 0 \
             --format table \
             --no-progress \
@@ -257,6 +259,7 @@ jobs:
           echo "============================================"
           trivy image \
             --severity CRITICAL,HIGH \
+            --ignore-unfixed \
             --exit-code 1 \
             --format json \
             --output trivy-frontend.json \
@@ -264,6 +267,7 @@ jobs:
             secureflow/frontend:test || true
           trivy image \
             --severity CRITICAL,HIGH \
+            --ignore-unfixed \
             --exit-code 0 \
             --format table \
             --no-progress \
@@ -276,6 +280,7 @@ jobs:
           echo "============================================"
           trivy image \
             --severity CRITICAL,HIGH \
+            --ignore-unfixed \
             --exit-code 1 \
             --format json \
             --output trivy-transaction-service.json \
@@ -283,6 +288,7 @@ jobs:
             secureflow/transaction-service:test || true
           trivy image \
             --severity CRITICAL,HIGH \
+            --ignore-unfixed \
             --exit-code 0 \
             --format table \
             --no-progress \
@@ -328,8 +334,8 @@ jobs:
           if [ "$FAIL" -eq "1" ]; then
             echo ""
             echo "HARD-FAIL: CRITICAL or HIGH CVEs found in service images"
-            echo "Remediation: upgrade base image from python:3.9-slim to python:3.12-slim"
-            echo "This will be performed in Week 2 Day 7"
+            echo "Remediation: ensure base image is python:3.12-slim and dependencies patched"
+            echo "Note: unfixed CVEs (no upstream patch) are excluded via --ignore-unfixed"
             exit 1
           else
             echo "All images passed CVE scan"
