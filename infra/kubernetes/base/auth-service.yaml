@@ -3,7 +3,10 @@ kind: Deployment
 metadata:
   name: auth-service
   namespace: secureflow
-  # CK-07 — missing required labels.
+  labels:                                  # CK-07 REMEDIATED — required labels
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: secureflow
+    app.kubernetes.io/component: backend
 spec:
   replicas: 1
   selector:
@@ -13,11 +16,19 @@ spec:
     metadata:
       labels:
         svc: auth-service
+        app.kubernetes.io/name: auth-service
+        app.kubernetes.io/part-of: secureflow
     spec:
+      # Pod-level security context
+      securityContext:
+        runAsNonRoot: true                 # CK-04 — refuse to run as root
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: auth-service
-          # CK-06 — :latest tag.
-          image: secureflow/auth-service:latest
+          image: secureflow/auth-service:hardened   # CK-06 REMEDIATED — no :latest
           ports:
             - containerPort: 5001
           envFrom:
@@ -35,18 +46,33 @@ spec:
                 configMapKeyRef:
                   name: secureflow-config
                   key: AUTH_DB_PASSWORD
-          # CK-04 — privileged container with privilege escalation.
+          # CK-04 REMEDIATED — container security context
           securityContext:
-            privileged: true
-            allowPrivilegeEscalation: true
-            runAsUser: 0
-          # CK-05 — no resources.
+            privileged: false
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # CK-05 REMEDIATED — resource limits
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: auth-service
   namespace: secureflow
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: secureflow
 spec:
   selector:
     svc: auth-service

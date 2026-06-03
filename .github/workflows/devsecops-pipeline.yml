@@ -133,7 +133,6 @@ jobs:
     name: "Stage 2 — SAST Scanning"
     runs-on: ubuntu-latest
     needs: secret-scan
-    continue-on-error: true    # TEMPORARY — Stage 2 findings are Day 8/AppSec work; let Stage 3 run to verify
     steps:
       - name: Checkout code
         uses: actions/checkout@v4.2.2

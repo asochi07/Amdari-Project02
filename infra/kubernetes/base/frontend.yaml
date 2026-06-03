@@ -3,6 +3,10 @@ kind: Deployment
 metadata:
   name: frontend
   namespace: secureflow
+  labels:                                  # CK-07 REMEDIATED
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: secureflow
+    app.kubernetes.io/component: frontend
 spec:
   replicas: 1
   selector:
@@ -12,26 +16,55 @@ spec:
     metadata:
       labels:
         svc: frontend
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/part-of: secureflow
     spec:
+      securityContext:
+        runAsNonRoot: true                 # CK-04 REMEDIATED
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
-          image: secureflow/frontend:latest   # CK-06
+          image: secureflow/frontend:hardened   # CK-06 REMEDIATED
           ports:
             - containerPort: 5000
           envFrom:
             - configMapRef:
                 name: secureflow-config
           securityContext:
-            privileged: true                # CK-04
-            allowPrivilegeEscalation: true  # CK-04
-            runAsUser: 0                    # CK-02
-          # CK-05 — no resources.
+            privileged: false               # CK-04 REMEDIATED
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:                        # CK-05 REMEDIATED
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          # If the app fails with a read-only filesystem error, uncomment:
+          # volumeMounts:
+          #   - name: tmp
+          #     mountPath: /tmp
+      # volumes:
+      #   - name: tmp
+      #     emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: frontend
   namespace: secureflow
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: secureflow
 spec:
   type: NodePort
   selector:
