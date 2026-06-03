@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "frontend"
+        vault.hashicorp.com/agent-inject-secret-config: "secureflow/data/frontend"
+        vault.hashicorp.com/agent-inject-template-config: |
+          {{- with secret "secureflow/data/frontend" -}}
+          SESSION_SECRET={{ .Data.data.SESSION_SECRET }}
+          {{- end -}}
+    spec:
+      serviceAccountName: frontend
+      containers:
+        - name: frontend
+          image: python:3.12-slim
+          command: ["sleep", "3600"]
