@@ -24,4 +24,4 @@ build/
 
 # Local artifacts — keep locally only
 screenshots/
-reports/
+reports/gitleaks-local.json
