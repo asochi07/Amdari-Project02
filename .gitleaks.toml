@@ -49,6 +49,7 @@ regexes = [
   '''REDACTED-ROTATED-SECRET''',
   '''REDACTED-AWS-KEY''',
   '''REDACTED-''',
+  '''PLACEHOLDER_SET_AT_DEPLOY_TIME''',
   '''\$\{\{\s*secrets\.''',
 ]
 paths = [
