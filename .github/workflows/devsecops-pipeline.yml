@@ -155,7 +155,7 @@ jobs:
 
           # Fetch quality gate status from SonarCloud API
           SONAR_STATUS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=Azochi07_Amdari-Project02" \
+            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=asochi07_Amdari-Project02" \
             | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['projectStatus']['status'])")
 
           echo "SonarQube Quality Gate Status: $SONAR_STATUS"
@@ -177,7 +177,7 @@ jobs:
           echo "Exporting SonarQube findings for security gate consumption..."
 
           curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/issues/search?projectKeys=Azochi07_Amdari-Project02&resolved=false" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=asochi07_Amdari-Project02&resolved=false" \
             -o sonarqube-findings.json
 
           echo "Findings exported to sonarqube-findings.json"
