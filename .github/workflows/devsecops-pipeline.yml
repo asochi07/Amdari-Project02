@@ -127,7 +127,8 @@ jobs:
 
 # =============================================================================
 # STAGE 2 — SAST Scanning (SonarQube)
-# Gate: Hard-fail on CRITICAL/BLOCKER — Soft-fail on MAJOR/MINOR
+# Gate: DIFFERENTIATED — Hard-fail only on DevSecOps-owned CRITICAL/BLOCKER.
+# Application-layer findings (services/*) route to AppSec without blocking.
 # =============================================================================
   sast-scan:
     name: "Stage 2 — SAST Scanning"
@@ -140,36 +141,91 @@ jobs:
           fetch-depth: 0        # Required for SonarQube blame data
 
       - name: Run SonarQube SAST Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Check SonarQube Quality Gate
+      - name: Check SonarQube Quality Gate (Differentiated)
         id: sonarqube-check
         run: |
-          echo "Fetching SonarQube analysis results..."
+          echo "Fetching SonarQube findings for differentiated gate evaluation..."
 
-          # Wait for analysis to complete
-          sleep 10
+          # Wait for analysis to be processed server-side
+          sleep 15
 
-          # Fetch quality gate status from SonarCloud API
-          SONAR_STATUS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=asochi07_Amdari-Project02" \
-            | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['projectStatus']['status'])")
+          # Fetch all unresolved issues
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=asochi07_Amdari-Project02&resolved=false&ps=500" \
+            -o sonar-gate-issues.json
 
-          echo "SonarQube Quality Gate Status: $SONAR_STATUS"
-          echo "sonar_status=$SONAR_STATUS" >> $GITHUB_OUTPUT
+          # Differentiated gate: classify each finding by ownership path.
+          # DevSecOps owns infrastructure & pipeline config — those hard-fail on
+          # CRITICAL/BLOCKER. Application source (services/*) routes to AppSec.
+          python3 << 'EOF'
+          import json, sys, os
 
-          # Hard-fail only on ERROR (CRITICAL/BLOCKER findings)
-          # WARN = MAJOR/MINOR findings — soft-fail, continue pipeline
-          if [ "$SONAR_STATUS" = "ERROR" ]; then
-            echo "CRITICAL or BLOCKER findings detected — hard-failing pipeline"
-            exit 1
-          else
-            echo "No CRITICAL/BLOCKER findings — pipeline continues"
-            echo "AppSec-owned findings will be surfaced in security gate PR comment"
-          fi
+          with open('sonar-gate-issues.json') as f:
+              data = json.load(f)
+
+          issues = data.get('issues', [])
+
+          def owner(component):
+              path = component.split(':', 1)[-1]
+              if path.startswith('infra/'):
+                  return 'DEVSECOPS'
+              if path.startswith('.github/'):
+                  return 'DEVSECOPS'
+              if path.startswith('services/'):
+                  return 'APPSEC'
+              return 'APPSEC'  # default unknowns to AppSec (routes, never blocks)
+
+          BLOCKING_SEV = {'BLOCKER', 'CRITICAL'}
+          devsecops_blocking = []
+          appsec_routed = []
+
+          for i in issues:
+              o = owner(i.get('component', ''))
+              sev = i.get('severity', 'UNKNOWN')
+              loc = i.get('component', '').split(':', 1)[-1]
+              rec = f"[{sev}] {loc}:{i.get('line','?')} — {i.get('message','')}"
+              if o == 'DEVSECOPS' and sev in BLOCKING_SEV:
+                  devsecops_blocking.append(rec)
+              else:
+                  appsec_routed.append(rec)
+
+          print("=" * 60)
+          print("SONARQUBE DIFFERENTIATED GATE EVALUATION")
+          print("=" * 60)
+          print(f"Total findings: {len(issues)}")
+          print(f"DevSecOps-owned blocking (CRITICAL/BLOCKER): {len(devsecops_blocking)}")
+          print(f"AppSec-routed (non-blocking): {len(appsec_routed)}")
+          print()
+
+          if appsec_routed:
+              print("--- ROUTED TO APPSEC (does not block delivery) ---")
+              for r in appsec_routed:
+                  print("  " + r)
+              print()
+
+          # Expose status for the security gate
+          status = "FAIL" if devsecops_blocking else "PASS"
+          gh = os.environ.get('GITHUB_OUTPUT')
+          if gh:
+              with open(gh, 'a') as out:
+                  out.write(f"sonar_status={status}\n")
+
+          if devsecops_blocking:
+              print("--- DEVSECOPS-OWNED BLOCKING FINDINGS ---")
+              for r in devsecops_blocking:
+                  print("  " + r)
+              print()
+              print("HARD-FAIL: DevSecOps-owned CRITICAL/BLOCKER findings present.")
+              sys.exit(1)
+          else:
+              print("PASS: No DevSecOps-owned CRITICAL/BLOCKER findings.")
+              print("Application-layer findings routed to AppSec intake — pipeline continues.")
+          EOF
 
       - name: Export SonarQube Findings to JSON
         if: always()
@@ -177,7 +233,7 @@ jobs:
           echo "Exporting SonarQube findings for security gate consumption..."
 
           curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
-            "https://sonarcloud.io/api/issues/search?projectKeys=asochi07_Amdari-Project02&resolved=false" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=asochi07_Amdari-Project02&resolved=false&ps=500" \
             -o sonarqube-findings.json
 
           echo "Findings exported to sonarqube-findings.json"
