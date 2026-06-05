@@ -19,9 +19,9 @@
 
 ## STAGE 1 — GITLEAKS SECRET DETECTION
 
-| # | Tool | Finding ID | Description | Severity | File | Line | Vuln ID | Owner | Gate |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 | Gitleaks | aws-access-token | AWS_ACCESS_KEY_ID=REDACTED-AWS-KEY | CRITICAL | .env | 15 | IV-04 | DevSecOps | Hard-fail |
+| # | Tool     | Finding ID       | Description                                 | Severity | File | Line | Vuln ID | Owner | Gate |
+|---|----------|------------------|---------------------------------------------|----------|--------|---|---|---|---|
+| 1 | Gitleaks | aws-access-token | AWS_ACCESS_KEY_ID=REDACTED-AWS-KEY          | CRITICAL | .env | 15 | IV-04 | DevSecOps | Hard-fail |
 | 2 | Gitleaks | jwt-secret | JWT_SECRET=REDACTED-ROTATED-SECRET | CRITICAL | .env | 35 | AV-07, IV-04 | DevSecOps | Hard-fail |
 | 3 | Gitleaks | flask-secret-key | SESSION_SECRET=REDACTED-ROTATED-SECRET | CRITICAL | .env | 40 | FV-03, IV-04 | DevSecOps | Hard-fail |
 | 4 | Gitleaks | db-password-env | AUTH_DB_PASSWORD=REDACTED-ROTATED-SECRET | CRITICAL | .env | 20 | IV-01, IV-04 | DevSecOps | Hard-fail |

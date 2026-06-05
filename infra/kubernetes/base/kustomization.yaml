@@ -6,6 +6,7 @@ namespace: secureflow
 resources:
   - namespace.yaml
   - configmap.yaml
+  - secret.yaml
   - databases.yaml
   - auth-service.yaml
   - transaction-service.yaml

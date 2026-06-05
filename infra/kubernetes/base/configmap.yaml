@@ -4,11 +4,8 @@ metadata:
   name: secureflow-config
   namespace: secureflow
 data:
-  # CK-09 — secrets in plaintext ConfigMap.
-  # Remediation in Step 14: migrate to Vault Agent Injector.
-  JWT_SECRET: "REDACTED-ROTATED-SECRET"
-  SESSION_SECRET: "REDACTED-ROTATED-SECRET"
-  AUTH_DB_PASSWORD: "REDACTED-ROTATED-SECRET"
-  TX_DB_PASSWORD: "REDACTED-ROTATED-SECRET"
+  # CK-09 REMEDIATED — only non-sensitive configuration remains here.
+  # Secrets now live in the secureflow-db-secrets Secret (and in Vault for
+  # the injected app deployments, per Day 6).
   AUTH_SERVICE_URL: "http://auth-service:5001"
   TRANSACTION_SERVICE_URL: "http://transaction-service:5002"

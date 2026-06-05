@@ -3,6 +3,10 @@ kind: Deployment
 metadata:
   name: auth-db
   namespace: secureflow
+  labels:
+    app.kubernetes.io/name: auth-db
+    app.kubernetes.io/part-of: secureflow
+    app.kubernetes.io/component: database
 spec:
   replicas: 1
   selector:
@@ -12,10 +16,19 @@ spec:
     metadata:
       labels:
         svc: auth-db
+        app.kubernetes.io/name: auth-db
+        app.kubernetes.io/part-of: secureflow
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
-          image: postgres:14    # CK-03 — no digest pinning.
+          image: postgres:14@sha256:a209aced4fa19381231fae4d9a4c5816f7691294f13572f8bddc082ba32e1c7c
           env:
             - name: POSTGRES_DB
               value: authdb
@@ -23,17 +36,52 @@ spec:
               value: authuser
             - name: POSTGRES_PASSWORD
               valueFrom:
-                configMapKeyRef:
-                  name: secureflow-config
+                secretKeyRef:
+                  name: secureflow-db-secrets
                   key: AUTH_DB_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           ports:
             - containerPort: 5432
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: auth-db
   namespace: secureflow
+  labels:
+    app.kubernetes.io/name: auth-db
+    app.kubernetes.io/part-of: secureflow
 spec:
   selector:
     svc: auth-db
@@ -46,6 +94,10 @@ kind: Deployment
 metadata:
   name: transaction-db
   namespace: secureflow
+  labels:
+    app.kubernetes.io/name: transaction-db
+    app.kubernetes.io/part-of: secureflow
+    app.kubernetes.io/component: database
 spec:
   replicas: 1
   selector:
@@ -55,10 +107,19 @@ spec:
     metadata:
       labels:
         svc: transaction-db
+        app.kubernetes.io/name: transaction-db
+        app.kubernetes.io/part-of: secureflow
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
-          image: postgres:14
+          image: postgres:14@sha256:a209aced4fa19381231fae4d9a4c5816f7691294f13572f8bddc082ba32e1c7c
           env:
             - name: POSTGRES_DB
               value: transactiondb
@@ -66,17 +127,52 @@ spec:
               value: txuser
             - name: POSTGRES_PASSWORD
               valueFrom:
-                configMapKeyRef:
-                  name: secureflow-config
+                secretKeyRef:
+                  name: secureflow-db-secrets
                   key: TX_DB_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           ports:
             - containerPort: 5432
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: transaction-db
   namespace: secureflow
+  labels:
+    app.kubernetes.io/name: transaction-db
+    app.kubernetes.io/part-of: secureflow
 spec:
   selector:
     svc: transaction-db
