@@ -768,38 +768,169 @@ jobs:
           else
             echo "SECURITY GATE: MERGE ALLOWED"
           fi
-
 # =============================================================================
 # STAGE 6 — Image Signing and SBOM
-# Status: Placeholder — full implementation Day 5
+# Pushes hardened images to GHCR, signs with Cosign, attaches SPDX SBOM.
+# Runs only after the security gate passes — no failing build is ever signed.
 # =============================================================================
   image-sign:
     name: "Stage 6 — Image Signing and SBOM"
     runs-on: ubuntu-latest
     needs: security-gate
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
-      - name: Hello World — Stage 6 placeholder
-        run: |
-          echo "============================================"
-          echo "Stage 6: Image Signing and SBOM — PLACEHOLDER"
-          echo "Implementation: Day 5"
-          echo "============================================"
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update && sudo apt-get install -y trivy
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push hardened images
+        id: build
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner=$OWNER" >> $GITHUB_OUTPUT
+          for svc in auth-service frontend transaction-service; do
+            IMG="ghcr.io/$OWNER/secureflow-$svc:hardened"
+            docker build -t "$IMG" ./services/$svc
+            docker push "$IMG"
+            echo "Pushed $IMG"
+          done
+
+      - name: Generate SPDX SBOM per image
+        run: |
+          OWNER=${{ steps.build.outputs.owner }}
+          for svc in auth-service frontend transaction-service; do
+            IMG="ghcr.io/$OWNER/secureflow-$svc:hardened"
+            trivy image --format spdx-json --output $svc-sbom.spdx.json "$IMG"
+            echo "SBOM generated for $svc"
+          done
+
+      - name: Sign images and attach SBOM attestation
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          OWNER=${{ steps.build.outputs.owner }}
+          echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          for svc in auth-service frontend transaction-service; do
+            IMG="ghcr.io/$OWNER/secureflow-$svc:hardened"
+            DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMG")
+            echo "Signing $DIGEST ..."
+            cosign sign --yes --key cosign.key "$DIGEST"
+            cosign attest --yes --key cosign.key --predicate $svc-sbom.spdx.json --type spdxjson "$DIGEST"
+            echo "Signed + attested: $svc"
+          done
+          rm -f cosign.key
+
+      - name: Verify signatures
+        run: |
+          OWNER=${{ steps.build.outputs.owner }}
+          for svc in auth-service frontend transaction-service; do
+            IMG="ghcr.io/$OWNER/secureflow-$svc:hardened"
+            DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMG")
+            echo "Verifying $svc ..."
+            cosign verify --key cosign.pub "$DIGEST"
+          done
+
+      - name: Upload SBOMs as artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-sboms
+          path: "*-sbom.spdx.json"
 # =============================================================================
 # STAGE 7 — DAST Scanning (OWASP ZAP)
-# Gate: Soft-fail always — route to AppSec
-# Status: Placeholder — full implementation Day 5
+# Spins up the app, runs a ZAP baseline scan against it.
+# Soft-fail ALWAYS — findings route to AppSec, never block the merge.
 # =============================================================================
   dast-scan:
     name: "Stage 7 — DAST Scanning"
     runs-on: ubuntu-latest
     needs: security-gate
+    permissions:
+      contents: read
     steps:
-      - name: Hello World — Stage 7 placeholder
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Start the application stack
         run: |
-          echo "============================================"
-          echo "Stage 7: DAST Scanning — PLACEHOLDER"
-          echo "Tool: OWASP ZAP"
-          echo "Gate: Soft-fail — route findings to AppSec"
-          echo "Implementation: Day 5"
-          echo "============================================"
+          docker compose up -d --build
+          echo "Waiting for services to come up..."
+          sleep 30
+          docker compose ps
+
+      - name: Wait for frontend to respond
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:5000/ >/dev/null 2>&1; then
+              echo "Frontend is up."
+              break
+            fi
+            echo "  waiting ($i)..."
+            sleep 5
+          done
+
+      - name: Run OWASP ZAP Baseline Scan
+        continue-on-error: true   # SOFT-FAIL — DAST never blocks the merge
+        run: |
+          docker run --rm --network host \
+            -v "$(pwd):/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://localhost:5000 \
+            -J zap-report.json \
+            -r zap-report.html \
+            -I || true
+          echo "ZAP scan complete (soft-fail — findings routed to AppSec)"
+
+      - name: Summarise ZAP findings for AppSec
+        if: always()
+        run: |
+          if [ -f zap-report.json ]; then
+            python3 -c "
+          import json
+          with open('zap-report.json') as f:
+              data = json.load(f)
+          alerts = []
+          for site in data.get('site', []):
+              for a in site.get('alerts', []):
+                  alerts.append((a.get('riskdesc','?'), a.get('alert','?'), a.get('count','?')))
+          print('=' * 60)
+          print('OWASP ZAP DAST — FINDINGS ROUTED TO APPSEC')
+          print('=' * 60)
+          print(f'Total alert types: {len(alerts)}')
+          for risk, name, count in sorted(alerts, reverse=True):
+              print(f'  [{risk}] {name} (x{count})')
+          print()
+          print('These are application-layer findings (AppSec-owned).')
+          print('They do NOT block the merge per the gate policy.')
+          "
+          else
+            echo "No ZAP report produced."
+          fi
+
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v || true
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-dast-report
+          path: |
+            zap-report.json
+            zap-report.html

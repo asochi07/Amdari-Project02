@@ -1,8 +1,9 @@
 # SecureFlow Security Gate Policy
 
 **Document Owner:** DevSecOps Team
-**Version:** 1.0
+**Version:** 2.0
 **Effective Date:** June 2026
+**Last Revised:** Day 9 — post-remediation review
 **Review Cycle:** Quarterly
 
 ---
@@ -28,10 +29,11 @@ scanner's findings are owned by a specific team.
 | Scanner | Stage | Security Layer | Owner | Gate Behaviour |
 |---|---|---|---|---|
 | Gitleaks | 1 | Secrets in code/history | DevSecOps | Hard-fail on ANY finding |
-| SonarQube | 2 | Application code (SAST) | AppSec | Hard-fail CRITICAL/BLOCKER only |
+| SonarQube | 2 | SAST (path-classified) | Split | Hard-fail DevSecOps-owned CRITICAL/BLOCKER; route app-code to AppSec |
 | Trivy | 3 | Container image CVEs | DevSecOps | Hard-fail CRITICAL/HIGH |
 | Trivy Config | 4 | Kubernetes manifests | DevSecOps | Hard-fail CRITICAL/HIGH |
 | Checkov | 4 | Terraform IaC | DevSecOps | Hard-fail CRITICAL/HIGH |
+| Cosign + SBOM | 6 | Supply chain integrity | DevSecOps | Sign on gate pass; attach SPDX SBOM |
 | OWASP ZAP | 7 | Runtime behaviour (DAST) | AppSec | Soft-fail — route only |
 
 ## 4. Gate Decision Rules
@@ -56,7 +58,7 @@ fixed before code ships.
 The following findings are SURFACED but do NOT block the merge. They
 are routed to the AppSec team via an automated intake comment:
 
-- SonarQube application-code findings below CRITICAL severity
+- SonarQube application-code findings (services/ path), all severities
 - All OWASP ZAP DAST findings (SQL injection, IDOR, XSS, CSRF)
 - Application logic vulnerabilities
 
@@ -66,14 +68,27 @@ and development teams. Blocking the pipeline on them would stall
 delivery for issues the DevSecOps engineer cannot directly fix. They
 are tracked and routed, never silently ignored.
 
-### 4.3 The Single Exception — SonarQube CRITICAL/BLOCKER
+### 4.3 SonarQube — Differentiated by Code Ownership
 
-SonarQube CRITICAL or BLOCKER findings hard-fail the pipeline even
-though SonarQube is primarily an AppSec tool. This is because a
-CRITICAL/BLOCKER finding represents code so dangerous it should not
-ship under any circumstances regardless of owner. Examples include
-hardcoded credentials in source and application binding to all
-network interfaces.
+SonarQube findings are classified by the file path of each finding,
+not treated uniformly:
+
+- **DevSecOps-owned paths** (`infra/`, `.github/`) — CRITICAL or
+  BLOCKER findings HARD-FAIL the pipeline. These are infrastructure
+  and pipeline configuration the DevSecOps team owns and must fix.
+  Example: an IAM policy misconfiguration detected in Terraform.
+
+- **Application-code paths** (`services/`) — ALL findings, including
+  CRITICAL and BLOCKER, are ROUTED to AppSec and do NOT block the
+  merge. Example: an application binding to all network interfaces
+  (app.run host 0.0.0.0) in service source code.
+
+**Rationale:** A BLOCKER in infrastructure code is the DevSecOps
+engineer's responsibility and can be fixed immediately. A BLOCKER in
+application logic requires the development and AppSec teams, and
+blocking delivery on it would stall the pipeline for issues the
+DevSecOps engineer cannot directly remediate. The gate enforces this
+split automatically by inspecting each finding's component path.
 
 ## 5. Exception Process
 
@@ -123,14 +138,41 @@ PR comment containing this intake structure:
     Intake: [link to AppSec ticketing queue]
     SLA: Triage within 5 business days
 
-## 7. Policy Enforcement
+## 7. Supply Chain Integrity (Stage 6)
+
+After all four scanner stages pass, the pipeline establishes supply
+chain provenance for the container images:
+
+- **Image signing** — each hardened image is signed with Cosign using
+  a keypair held in GitHub secrets. Signatures allow downstream
+  consumers to verify the image originated from this pipeline.
+- **SBOM generation** — an SPDX software bill of materials is generated
+  per image with Trivy, enumerating every package and version.
+- **Attestation** — the SBOM is attached to the image as a Cosign
+  attestation, cryptographically binding the bill of materials to the
+  signed artefact.
+
+Signing occurs ONLY after the security gate passes, so no failing
+build is ever signed. This makes the signature a meaningful assertion
+that the image cleared every DevSecOps-owned gate.
+
+## 8. Policy Enforcement
 
 This policy is enforced automatically by the security-gate job in the
 pipeline. The gate cannot be bypassed except through the documented
 exception process. Direct pushes to main that bypass the pipeline are
 prohibited by branch protection rules.
 
-## 8. Review and Maintenance
+## 9. Review and Maintenance
 
 This policy is reviewed quarterly by the DevSecOps team and updated as
 new scanners are added or ownership boundaries change.
+
+---
+
+## Appendix A — Revision History
+
+| Version | Date | Change |
+|---|---|---|
+| 1.0 | Day 5 | Initial gate policy: ownership matrix, hard-fail vs soft-fail rules, exception process |
+| 2.0 | Day 9 | Post-remediation review: SonarQube reclassified to path-based differentiated ownership (section 4.3); added Cosign/SBOM supply chain integrity (section 7); ownership matrix updated with Stage 6 |
