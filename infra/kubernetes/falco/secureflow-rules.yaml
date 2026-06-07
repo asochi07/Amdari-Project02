@@ -1,0 +1,80 @@
+# SecureFlow custom Falco rules — last-line runtime detection.
+# Scoped to the secureflow namespace. Because the application-layer
+# vulnerabilities (SQLi, IDOR, XSS) remain exploitable, these rules
+# detect exploitation in progress at runtime.
+customRules:
+  secureflow-rules.yaml: |-
+    # --- Rule 1: Unexpected shell in a secureflow container ---
+    # An attacker exploiting RCE often spawns a shell. App containers
+    # should never run bash/sh interactively.
+    - rule: SecureFlow Shell in Container
+      desc: Detect a shell spawned inside a secureflow application container
+      condition: >
+        spawned_process
+        and container
+        and k8s.ns.name = "secureflow"
+        and proc.name in (bash, sh, zsh, ash, dash)
+      output: >
+        Shell spawned in SecureFlow container
+        (user=%user.name container=%container.name pod=%k8s.pod.name
+        command=%proc.cmdline image=%container.image.repository)
+      priority: WARNING
+      tags: [secureflow, shell, mitre_execution]
+
+    # --- Rule 2: Write to a read-only path ---
+    # Our containers run readOnlyRootFilesystem. Any write to the root
+    # filesystem signals tampering or exploitation.
+    - rule: SecureFlow Write Below Root
+      desc: Detect writes to unexpected locations in a secureflow container
+      condition: >
+        open_write
+        and container
+        and k8s.ns.name = "secureflow"
+        and fd.name startswith /
+        and not fd.name startswith /tmp
+        and not fd.name startswith /var/run
+        and not fd.name startswith /vault/secrets
+        and not fd.name startswith /var/lib/postgresql
+      output: >
+        Write to read-only path in SecureFlow container
+        (file=%fd.name container=%container.name pod=%k8s.pod.name
+        user=%user.name)
+      priority: ERROR
+      tags: [secureflow, filesystem, mitre_persistence]
+
+    # --- Rule 3: Outbound connection from a database pod ---
+    # Database pods should only ACCEPT connections, never INITIATE
+    # outbound ones. An outbound connection suggests data exfiltration.
+    - rule: SecureFlow DB Outbound Connection
+      desc: Detect outbound network connection initiated by a database pod
+      condition: >
+        outbound
+        and container
+        and k8s.ns.name = "secureflow"
+        and k8s.pod.name contains "db"
+      output: >
+        Outbound connection from SecureFlow database pod
+        (pod=%k8s.pod.name connection=%fd.name
+        command=%proc.cmdline container=%container.name)
+      priority: ERROR
+      tags: [secureflow, network, exfiltration, mitre_exfiltration]
+
+    # --- Rule 4: Sensitive file read ---
+    # Detect reads of credential / secret files inside secureflow
+    # containers beyond the expected Vault secrets path.
+    - rule: SecureFlow Sensitive File Read
+      desc: Detect reads of sensitive credential files in a secureflow container
+      condition: >
+        open_read
+        and container
+        and k8s.ns.name = "secureflow"
+        and (fd.name in (/etc/shadow, /etc/passwd)
+             or fd.name contains "id_rsa"
+             or fd.name contains ".aws/credentials"
+             or fd.name endswith ".pem")
+      output: >
+        Sensitive file read in SecureFlow container
+        (file=%fd.name container=%container.name pod=%k8s.pod.name
+        user=%user.name command=%proc.cmdline)
+      priority: WARNING
+      tags: [secureflow, credentials, mitre_credential_access]
